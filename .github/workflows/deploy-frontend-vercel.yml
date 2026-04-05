@@ -8,9 +8,6 @@ on:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: aesl-website-main
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -24,18 +21,18 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.npm
-          key: ${{ runner.os }}-node-18-${{ hashFiles('**/package-lock.json') }}
+          key: ${{ runner.os }}-node-18-${{ hashFiles('aesl-website-main/package-lock.json') }}
           restore-keys: |
             ${{ runner.os }}-node-18-
 
       - name: Install dependencies
-        run: npm ci
+        run: cd aesl-website-main && npm ci
 
       - name: Build frontend
-        run: npm run build
+        run: cd aesl-website-main && npm run build
 
       - name: Deploy to Vercel
-        run: npx --yes vercel@latest --prod --confirm --token $VERCEL_TOKEN
+        run: cd aesl-website-main && npx --yes vercel@latest --prod --confirm --token $VERCEL_TOKEN
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
