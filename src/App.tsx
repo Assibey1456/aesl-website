@@ -21,6 +21,8 @@ interface FileData {
   uploadedBy: string;
   uploadedAt: string;
   department: string;
+  fileId?: string;
+  downloadUrl?: string;
 }
 
 interface FilesState {
@@ -435,35 +437,117 @@ export default function App() {
     }
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !selectedDept || !user) return;
     const allowedExtensions = ['.dwg', '.pdf', '.doc', '.docx', '.xls', '.xlsx'];
     const fileExtension = file.name.toLowerCase().substring(file.name.lastIndexOf('.'));
     if (!allowedExtensions.includes(fileExtension)) { alert('Only .dwg, .pdf, .doc, .docx, .xls, and .xlsx files are allowed'); return; }
-    const fileData: FileData = { name: file.name, size: file.size, uploadedBy: user.name, uploadedAt: new Date().toISOString(), department: selectedDept };
-    const newFiles = { ...files };
-    if (!newFiles[selectedDept]) newFiles[selectedDept] = [];
-    newFiles[selectedDept].push(fileData);
-    setFiles(newFiles); saveFiles(newFiles);
-    e.target.value = '';
-    alert('File uploaded successfully!');
+    
+    try {
+      // Create FormData and send actual file blob to backend
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('department', selectedDept);
+      formData.append('uploadedBy', user.name);
+      
+      const response = await fetch('http://localhost:4000/api/files/upload', {
+        method: 'POST',
+        body: formData
+      });
+      
+      if (!response.ok) throw new Error('Upload failed');
+      const result = await response.json();
+      
+      // Use backend response data if available
+      const fileData: FileData = result.data ? {
+        name: result.data.name,
+        size: result.data.size,
+        uploadedBy: result.data.uploadedBy,
+        uploadedAt: result.data.uploadedAt,
+        department: result.data.department,
+        fileId: result.data.fileId,
+        downloadUrl: result.data.downloadUrl
+      } : {
+        name: file.name,
+        size: file.size,
+        uploadedBy: user.name,
+        uploadedAt: new Date().toISOString(),
+        department: selectedDept
+      };
+      
+      const newFiles = { ...files };
+      if (!newFiles[selectedDept]) newFiles[selectedDept] = [];
+      newFiles[selectedDept].push(fileData);
+      setFiles(newFiles);
+      saveFiles(newFiles);
+      
+      e.target.value = '';
+      alert('File uploaded successfully!');
+    } catch (error) {
+      console.error('Upload error:', error);
+      alert('Failed to upload file to server. Saving locally instead.');
+      // Fallback to local storage
+      const fileData: FileData = { name: file.name, size: file.size, uploadedBy: user.name, uploadedAt: new Date().toISOString(), department: selectedDept };
+      const newFiles = { ...files };
+      if (!newFiles[selectedDept]) newFiles[selectedDept] = [];
+      newFiles[selectedDept].push(fileData);
+      setFiles(newFiles);
+      saveFiles(newFiles);
+    }
   };
 
-  const handleDownload = (file: FileData) => alert(`Downloading: ${file.name}\nSize: ${(file.size / 1024).toFixed(2)} KB`);
+  const handleDownload = (file: FileData) => {
+    try {
+      // Try to download from backend first
+      const downloadUrl = `http://localhost:4000/uploads/${file.name}`;
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = file.name;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (error) {
+      console.error('Download error:', error);
+      alert(`Downloading: ${file.name}\nSize: ${(file.size / 1024).toFixed(2)} KB`);
+    }
+  };
 
-  const handleDelete = (fileIndex: number) => {
+  const handleDelete = async (fileIndex: number) => {
     if (!selectedDept) return;
-    if (confirm('Are you sure you want to delete this file?')) {
+    if (!confirm('Are you sure you want to delete this file?')) return;
+    
+    try {
+      const file = files[selectedDept][fileIndex];
+      const fileId = file.fileId;
+      
+      if (fileId) {
+        // Delete from backend
+        const response = await fetch(`http://localhost:4000/api/files/${fileId}`, {
+          method: 'DELETE'
+        });
+        if (!response.ok) throw new Error('Backend delete failed');
+      }
+      
+      // Delete from local storage
       const newFiles = { ...files };
       newFiles[selectedDept] = newFiles[selectedDept].filter((_, idx) => idx !== fileIndex);
-      setFiles(newFiles); saveFiles(newFiles);
+      setFiles(newFiles);
+      saveFiles(newFiles);
       alert('File deleted successfully!');
+    } catch (error) {
+      console.error('Delete error:', error);
+      // Fallback: delete from local storage anyway
+      const newFiles = { ...files };
+      newFiles[selectedDept] = newFiles[selectedDept].filter((_, idx) => idx !== fileIndex);
+      setFiles(newFiles);
+      saveFiles(newFiles);
     }
   };
 
   const handleShare = (file: FileData, platform: string) => {
-    const fileInfo = `Check out this file: ${file.name} (${(file.size / 1024).toFixed(2)} KB)`;
+    const downloadLink = file.downloadUrl ? `http://localhost:4000${file.downloadUrl}` : '';
+    const fileInfo = `Check out this file: ${file.name} (${(file.size / 1024).toFixed(2)} KB)${downloadLink ? ` - Download: ${downloadLink}` : ''}`;
     const encodedText = encodeURIComponent(fileInfo);
     const shareUrls: { [key: string]: string } = {
       whatsapp: `https://wa.me/?text=${encodedText}`,

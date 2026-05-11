@@ -1,0 +1,5 @@
+{
+	"appId": "com.aesl.app",
+	"appName": "YourAppName",
+	"webDir": "dist"
+}
